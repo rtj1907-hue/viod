@@ -1,0 +1,235 @@
+
+if getgenv().Gemini_FOV then getgenv().Gemini_FOV:Remove() end
+if getgenv().Gemini_ESP then
+    for _, playerTable in pairs(getgenv().Gemini_ESP) do
+        if playerTable.Box then playerTable.Box:Remove() end
+        if playerTable.Name then playerTable.Name:Remove() end
+        if playerTable.Dist then playerTable.Dist:Remove() end
+    end
+end
+for _, v in pairs(game:GetService("CoreGui"):GetChildren()) do
+    if v.Name == "Gemini_Chams" then v:Remove() end
+end
+
+getgenv().Gemini_ESP = {}
+local ChamsFolder = Instance.new("Folder", game:GetService("CoreGui"))
+ChamsFolder.Name = "Gemini_Chams"
+
+local library = loadstring(game:HttpGet(('https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/wall%20v3')))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+getgenv().AimbotConfig = {
+    Enabled = false,
+    Fov = 150,
+    Smooth = 5,
+    WallCheck = false,
+    TeamCheck = false,
+    TargetPart = "Head",
+    CurrentKey = "滑鼠右鍵",
+    MaxDistance = 500,
+    ChamsEnabled = false,
+    EspBox = false,
+    EspNames = false,
+    EspDistance = false,
+    EspTeamCheck = false
+}
+
+local IsAiming = false
+local CurrentTarget = nil
+
+-- FOV 初始化
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 1
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Transparency = 1
+FOVCircle.Visible = false
+getgenv().Gemini_FOV = FOVCircle
+
+local function IsTeammate(p)
+    if not p or not LocalPlayer then return false end
+    return p.Team ~= nil and p.Team == LocalPlayer.Team or p.TeamColor == LocalPlayer.TeamColor
+end
+
+local w = library:CreateWindow("自瞄V1")
+local f1 = w:CreateFolder("Aimbot 自瞄")
+local f2 = w:CreateFolder("視覺透視")
+
+f1:Toggle("開啟 Aimbot", function(v) getgenv().AimbotConfig.Enabled = v FOVCircle.Visible = v end)
+f1:Dropdown("鎖定快捷鍵", {"滑鼠右鍵", "Q", "E", "P", "V", "F"}, true, function(v) getgenv().AimbotConfig.CurrentKey = v end)
+f1:Slider("最大鎖定距離", {min = 50, max = 2000, precise = false}, function(v) getgenv().AimbotConfig.MaxDistance = v end)
+f1:Slider("鎖定範圍 (FOV)", {min = 50, max = 800, precise = false}, function(v) getgenv().AimbotConfig.Fov = v end)
+f1:Slider("平滑度 (Smooth)", {min = 1, max = 30, precise = false}, function(v) getgenv().AimbotConfig.Smooth = v end)
+f1:Dropdown("目標部位", {"Head", "HumanoidRootPart"}, true, function(v) getgenv().AimbotConfig.TargetPart = v end)
+f1:Toggle("牆壁檢查", function(v) getgenv().AimbotConfig.WallCheck = v end)
+f1:Toggle("團隊檢查", function(v) getgenv().AimbotConfig.TeamCheck = v end)
+
+f2:Toggle("高亮透視 (Chams)", function(v) getgenv().AimbotConfig.ChamsEnabled = v end)
+f2:Toggle("顯示方框 (Box)", function(v) getgenv().AimbotConfig.EspBox = v end)
+f2:Toggle("顯示名稱 (Name)", function(v) getgenv().AimbotConfig.EspNames = v end)
+f2:Toggle("顯示距離 (Dist)", function(v) getgenv().AimbotConfig.EspDistance = v end)
+f2:Toggle("視覺-隱藏隊友", function(v) getgenv().AimbotConfig.EspTeamCheck = v end)
+
+local function CreateESP(player)
+    if not getgenv().Gemini_ESP[player.Name] then
+        getgenv().Gemini_ESP[player.Name] = {
+            Box = Drawing.new("Square"),
+            Name = Drawing.new("Text"),
+            Dist = Drawing.new("Text")
+        }
+        local d = getgenv().Gemini_ESP[player.Name]
+        d.Box.Thickness = 1; d.Box.Filled = false; d.Box.Visible = false
+        d.Name.Size = 14; d.Name.Center = true; d.Name.Outline = true; d.Name.Visible = false
+        d.Dist.Size = 14; d.Dist.Center = true; d.Dist.Outline = true; d.Dist.Visible = false
+    end
+    return getgenv().Gemini_ESP[player.Name]
+end
+
+local function GetClosestTarget()
+    local mouseLoc = UserInputService:GetMouseLocation()
+    local target = nil
+    local shortestDist = getgenv().AimbotConfig.Fov
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if getgenv().AimbotConfig.TeamCheck and IsTeammate(p) then continue end
+            local part = p.Character:FindFirstChild(getgenv().AimbotConfig.TargetPart)
+            if part then
+                local worldDist = (part.Position - Camera.CFrame.Position).Magnitude
+                if worldDist > getgenv().AimbotConfig.MaxDistance then continue end
+                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
+                    if dist < shortestDist then
+                        if getgenv().AimbotConfig.WallCheck then
+                            local params = RaycastParams.new()
+                            params.FilterType = Enum.RaycastFilterType.Exclude
+                            params.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+                            local result = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position), params)
+                            if result and not result.Instance:IsDescendantOf(p.Character) then continue end
+                        end
+                        target = part
+                        shortestDist = dist
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+local function CheckInput(input, state)
+    local keyStr = getgenv().AimbotConfig.CurrentKey
+    if keyStr == "滑鼠右鍵" then
+        if input.UserInputType == Enum.UserInputType.MouseButton2 then IsAiming = state end
+    else
+        pcall(function()
+            if input.KeyCode == Enum.KeyCode[keyStr:upper()] then IsAiming = state end
+        end)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(i, p) if not p then CheckInput(i, true) end end)
+UserInputService.InputEnded:Connect(function(i) CheckInput(i, false) end)
+
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Position = UserInputService:GetMouseLocation()
+    FOVCircle.Radius = getgenv().AimbotConfig.Fov
+
+    local aimTargetPart = nil
+    if getgenv().AimbotConfig.Enabled and IsAiming then
+        aimTargetPart = GetClosestTarget()
+        if aimTargetPart then
+            CurrentTarget = aimTargetPart.Parent
+            FOVCircle.Color = Color3.fromRGB(0, 255, 0)
+            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, aimTargetPart.Position), 1 / getgenv().AimbotConfig.Smooth)
+        else
+            CurrentTarget = nil
+            FOVCircle.Color = Color3.fromRGB(255, 0, 0)
+        end
+    else
+        CurrentTarget = nil
+        FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+    end
+
+    -- ESP 循環
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        
+        local d = CreateESP(p)
+        local char = p.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChild("Humanoid")
+        
+        -- 核心過濾邏輯
+        local isTeam = IsTeammate(p)
+        local canVisible = char and hrp and hum and hum.Health > 0
+        if canVisible and getgenv().AimbotConfig.EspTeamCheck and isTeam then canVisible = false end
+
+        if canVisible then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            
+            if onScreen then
+                local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
+                local size = (1 / dist) * 2000
+                local color = (CurrentTarget and CurrentTarget == char) and Color3.fromRGB(0, 255, 255) or p.TeamColor.Color
+        
+                d.Box.Visible = getgenv().AimbotConfig.EspBox
+                if d.Box.Visible then
+                    d.Box.Size = Vector2.new(size, size)
+                    d.Box.Position = Vector2.new(screenPos.X - size/2, screenPos.Y - size/2)
+                    d.Box.Color = color
+                end
+             
+                d.Name.Visible = getgenv().AimbotConfig.EspNames
+                if d.Name.Visible then
+                    d.Name.Text = p.Name
+                    local yOff = getgenv().AimbotConfig.EspBox and (size/2 + 5) or 25
+                    d.Name.Position = Vector2.new(screenPos.X, screenPos.Y - yOff - 10)
+                    d.Name.Color = color
+                end
+           
+                d.Dist.Visible = getgenv().AimbotConfig.EspDistance
+                if d.Dist.Visible then
+                    d.Dist.Text = math.floor(dist) .. "m"
+                    local yOff = getgenv().AimbotConfig.EspBox and (size/2 + 5) or 25
+                    d.Dist.Position = Vector2.new(screenPos.X, screenPos.Y + yOff)
+                    d.Dist.Color = color
+                end
+
+                local h = char:FindFirstChild("Gemini_Highlight")
+                if not h then
+                    h = Instance.new("Highlight")
+                    h.Name = "Gemini_Highlight"
+                    h.Parent = char
+                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                h.Enabled = getgenv().AimbotConfig.ChamsEnabled
+                h.FillColor = color
+            else
+
+                d.Box.Visible = false; d.Name.Visible = false; d.Dist.Visible = false
+            end
+        else
+
+            d.Box.Visible = false; d.Name.Visible = false; d.Dist.Visible = false
+            if char and char:FindFirstChild("Gemini_Highlight") then
+                char.Gemini_Highlight.Enabled = false
+            end
+        end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if getgenv().Gemini_ESP[p.Name] then
+        pcall(function()
+            getgenv().Gemini_ESP[p.Name].Box:Remove()
+            getgenv().Gemini_ESP[p.Name].Name:Remove()
+            getgenv().Gemini_ESP[p.Name].Dist:Remove()
+        end)
+        getgenv().Gemini_ESP[p.Name] = nil
+    end
+end)
