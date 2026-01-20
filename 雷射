@@ -1,0 +1,67 @@
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+ScreenGui.Parent = game:GetService("CoreGui")
+ToggleButton.Name = "LaserProtector"
+ToggleButton.Parent = ScreenGui
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+ToggleButton.Position = UDim2.new(0, 50, 0.4, 0)
+ToggleButton.Size = UDim2.new(0, 160, 0, 50)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.Text = "防雷射關閉"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 22
+ToggleButton.Draggable = true
+
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = ToggleButton
+
+local isClearing = false
+local protectionActive = false
+
+local function setLaserProtection(state)
+    if isClearing then return end
+    isClearing = true
+    
+    local allParts = game.Workspace:GetDescendants()
+    local batchSize = 400
+
+    for i, v in ipairs(allParts) do
+        if v:IsA("BasePart") then
+            v.CanTouch = not state 
+        end
+        
+        if i % batchSize == 0 then
+            task.wait() 
+        end
+    end
+    
+    isClearing = false
+end
+
+ToggleButton.MouseButton1Click:Connect(function()
+    if isClearing then 
+        return 
+    end
+    
+    protectionActive = not protectionActive
+    
+    if protectionActive then
+        ToggleButton.Text = "處理中..."
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        
+        setLaserProtection(true)
+        
+        ToggleButton.Text = "防雷射"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    else
+        ToggleButton.Text = "處理中..."
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        
+        setLaserProtection(false)
+        
+        ToggleButton.Text = "防雷射關閉"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
+    end
+end)
